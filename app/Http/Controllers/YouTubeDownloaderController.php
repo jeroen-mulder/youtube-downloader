@@ -18,11 +18,11 @@ class YouTubeDownloaderController extends Controller
 
         // Try common paths for yt-dlp
         $paths = [
-            '/home/forge/.local/bin/yt-dlp', // Forge user pip install (most common)
-            getenv('HOME') . '/.local/bin/yt-dlp', // Current user pip install
+            '/usr/local/bin/yt-dlp',         // Standalone binary (Linux/macOS)
+            '/usr/bin/yt-dlp',               // Linux system package
             '/opt/homebrew/bin/yt-dlp',      // macOS Homebrew (Apple Silicon)
-            '/usr/local/bin/yt-dlp',         // macOS Homebrew (Intel) / Linux
-            '/usr/bin/yt-dlp',               // Linux system
+            '/home/forge/.local/bin/yt-dlp', // Forge user pip install (legacy)
+            getenv('HOME') . '/.local/bin/yt-dlp', // Current user pip install (legacy)
             'yt-dlp',                        // Fallback to PATH
         ];
 
@@ -82,19 +82,12 @@ class YouTubeDownloaderController extends Controller
             ]);
             
             // Use yt-dlp to get video information and available formats
-            // Set explicit PATH and Python environment for pip-installed yt-dlp
-            $result = Process::env([
-                    'PATH' => getenv('HOME') . '/.local/bin:' . getenv('PATH'),
-                    'PYTHONIOENCODING' => 'utf-8',
-                    'LANG' => 'en_US.UTF-8',
-                ])
-                ->run([
-                    $ytDlpPath,
-                    '--dump-json',
-                    '--no-playlist',
-                    '--no-check-certificates', // Sometimes helps with SSL issues
-                    $request->url
-                ]);
+            $result = Process::run([
+                $ytDlpPath,
+                '--dump-json',
+                '--no-playlist',
+                $request->url
+            ]);
 
             if (!$result->successful()) {
                 \Log::error('Failed to fetch YouTube video info', [
@@ -230,14 +223,8 @@ class YouTubeDownloaderController extends Controller
 
             $startTime = microtime(true);
             
-            // Execute the download with proper environment
-            $result = Process::timeout(600)
-                ->env([
-                    'PATH' => getenv('HOME') . '/.local/bin:' . getenv('PATH'),
-                    'PYTHONIOENCODING' => 'utf-8',
-                    'LANG' => 'en_US.UTF-8',
-                ])
-                ->run($command);
+            // Execute the download
+            $result = Process::timeout(600)->run($command);
 
             if (!$result->successful()) {
                 \Log::error('YouTube download failed', [
@@ -267,17 +254,12 @@ class YouTubeDownloaderController extends Controller
             ]);
 
             // Get the filename from the video title
-            $infoResult = Process::env([
-                    'PATH' => getenv('HOME') . '/.local/bin:' . getenv('PATH'),
-                    'PYTHONIOENCODING' => 'utf-8',
-                    'LANG' => 'en_US.UTF-8',
-                ])
-                ->run([
-                    $this->getYtDlpPath(),
-                    '--get-title',
-                    '--no-playlist',
-                    $request->url
-                ]);
+            $infoResult = Process::run([
+                $this->getYtDlpPath(),
+                '--get-title',
+                '--no-playlist',
+                $request->url
+            ]);
 
             $fileName = $infoResult->successful() 
                 ? preg_replace('/[^A-Za-z0-9_\-\s]/', '_', trim($infoResult->output())) . '.mp4'
