@@ -10,13 +10,20 @@ class YouTubeDownloaderController extends Controller
 {
     private function getYtDlpPath(): string
     {
+        // Check for custom path in .env first (most reliable for production)
+        $customPath = env('YT_DLP_PATH');
+        if ($customPath && file_exists($customPath)) {
+            return $customPath;
+        }
+
         // Try common paths for yt-dlp
         $paths = [
-            '/opt/homebrew/bin/yt-dlp',  // macOS Homebrew (Apple Silicon)
-            '/usr/local/bin/yt-dlp',      // macOS Homebrew (Intel) / Linux
-            '/usr/bin/yt-dlp',            // Linux system
-            '/snap/bin/yt-dlp',
-            'yt-dlp',                     // Fallback to PATH
+            '/home/forge/.local/bin/yt-dlp', // Forge user pip install (most common)
+            getenv('HOME') . '/.local/bin/yt-dlp', // Current user pip install
+            '/opt/homebrew/bin/yt-dlp',      // macOS Homebrew (Apple Silicon)
+            '/usr/local/bin/yt-dlp',         // macOS Homebrew (Intel) / Linux
+            '/usr/bin/yt-dlp',               // Linux system
+            'yt-dlp',                        // Fallback to PATH
         ];
 
         foreach ($paths as $path) {
@@ -30,12 +37,18 @@ class YouTubeDownloaderController extends Controller
 
     private function getFfmpegPath(): string
     {
+        // Check for custom path in .env first
+        $customPath = env('FFMPEG_PATH');
+        if ($customPath && file_exists($customPath)) {
+            return $customPath;
+        }
+
         // Try common paths for ffmpeg
         $paths = [
-            '/opt/homebrew/bin/ffmpeg',  // macOS Homebrew (Apple Silicon)
-            '/usr/local/bin/ffmpeg',      // macOS Homebrew (Intel) / Linux
-            '/usr/bin/ffmpeg',            // Linux system
-            'ffmpeg',                     // Fallback to PATH
+            '/usr/bin/ffmpeg',               // Linux system (most common on Forge)
+            '/opt/homebrew/bin/ffmpeg',      // macOS Homebrew (Apple Silicon)
+            '/usr/local/bin/ffmpeg',         // macOS Homebrew (Intel) / Linux
+            'ffmpeg',                        // Fallback to PATH
         ];
 
         foreach ($paths as $path) {
