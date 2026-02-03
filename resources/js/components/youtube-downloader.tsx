@@ -83,9 +83,13 @@ export function YouTubeDownloaderWidget() {
     }
 
     const formatFileSize = (bytes: number | null) => {
-        if (!bytes) return 'Unknown'
+        if (!bytes || bytes === 0) return 'Size unknown'
         const mb = bytes / (1024 * 1024)
-        return `${mb.toFixed(2)} MB`
+        if (mb < 1) {
+            const kb = bytes / 1024
+            return `~${kb.toFixed(0)} KB`
+        }
+        return `~${mb.toFixed(1)} MB`
     }
 
     const formatDuration = (seconds: number | null) => {

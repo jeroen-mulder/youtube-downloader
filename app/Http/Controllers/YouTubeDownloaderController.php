@@ -72,24 +72,42 @@ class YouTubeDownloaderController extends Controller
         ]);
 
         try {
-            \Log::info('Fetching YouTube video info', ['url' => $request->url]);
+            $ytDlpPath = $this->getYtDlpPath();
+            
+            \Log::info('Fetching YouTube video info', [
+                'url' => $request->url,
+                'yt_dlp_path' => $ytDlpPath,
+                'path_exists' => file_exists($ytDlpPath) ? 'yes' : 'no',
+                'is_executable' => is_executable($ytDlpPath) ? 'yes' : 'no'
+            ]);
             
             // Use yt-dlp to get video information and available formats
-            $result = Process::run([
-                $this->getYtDlpPath(),
-                '--dump-json',
-                '--no-playlist',
-                $request->url
-            ]);
+            // Set explicit PATH and Python environment for pip-installed yt-dlp
+            $result = Process::env([
+                    'PATH' => getenv('HOME') . '/.local/bin:' . getenv('PATH'),
+                    'PYTHONIOENCODING' => 'utf-8',
+                    'LANG' => 'en_US.UTF-8',
+                ])
+                ->run([
+                    $ytDlpPath,
+                    '--dump-json',
+                    '--no-playlist',
+                    '--no-check-certificates', // Sometimes helps with SSL issues
+                    $request->url
+                ]);
 
             if (!$result->successful()) {
-                \Log::warning('Failed to fetch YouTube video info', [
+                \Log::error('Failed to fetch YouTube video info', [
                     'url' => $request->url,
-                    'error' => $result->errorOutput()
+                    'yt_dlp_path' => $ytDlpPath,
+                    'exit_code' => $result->exitCode(),
+                    'error_output' => $result->errorOutput(),
+                    'standard_output' => $result->output()
                 ]);
                 
                 return response()->json([
-                    'error' => 'Failed to fetch video information. Please check the URL.'
+                    'error' => 'Failed to fetch video information. Please check the URL.',
+                    'details' => config('app.debug') ? $result->errorOutput() : null
                 ], 400);
             }
 
@@ -111,12 +129,22 @@ class YouTubeDownloaderController extends Controller
                 ->filter(function ($format) {
                     return isset($format['height']) && isset($format['vcodec']) && $format['vcodec'] !== 'none';
                 })
-                ->map(function ($format) {
+                ->map(function ($format) use ($videoData) {
+                    // Try to get filesize from the format itself, or estimate it
+                    $filesize = $format['filesize'] ?? $format['filesize_approx'] ?? null;
+                    
+                    // If no filesize, try to estimate from bitrate and duration
+                    if (!$filesize && isset($format['tbr']) && isset($videoData['duration'])) {
+                        // tbr is in kbit/s, duration is in seconds
+                        // filesize in bytes = (tbr * 1000 / 8) * duration
+                        $filesize = (int)(($format['tbr'] * 1000 / 8) * $videoData['duration']);
+                    }
+                    
                     return [
                         'format_id' => $format['format_id'],
                         'resolution' => $format['height'] . 'p',
                         'ext' => $format['ext'] ?? 'mp4',
-                        'filesize' => $format['filesize'] ?? $format['filesize_approx'] ?? null,
+                        'filesize' => $filesize,
                         'fps' => $format['fps'] ?? null,
                     ];
                 })
@@ -161,7 +189,7 @@ class YouTubeDownloaderController extends Controller
 
         try {
             // Create a unique temporary file
-            $tempDir = sys_get_temp_dir();
+            $tempDir = rtrim(sys_get_temp_dir(), '/\\');
             $uniqueId = uniqid('yt_', true);
             $tempFile = $tempDir . '/' . $uniqueId . '.mp4';
 
@@ -202,8 +230,14 @@ class YouTubeDownloaderController extends Controller
 
             $startTime = microtime(true);
             
-            // Execute the download
-            $result = Process::timeout(600)->run($command);
+            // Execute the download with proper environment
+            $result = Process::timeout(600)
+                ->env([
+                    'PATH' => getenv('HOME') . '/.local/bin:' . getenv('PATH'),
+                    'PYTHONIOENCODING' => 'utf-8',
+                    'LANG' => 'en_US.UTF-8',
+                ])
+                ->run($command);
 
             if (!$result->successful()) {
                 \Log::error('YouTube download failed', [
@@ -233,12 +267,17 @@ class YouTubeDownloaderController extends Controller
             ]);
 
             // Get the filename from the video title
-            $infoResult = Process::run([
-                $this->getYtDlpPath(),
-                '--get-title',
-                '--no-playlist',
-                $request->url
-            ]);
+            $infoResult = Process::env([
+                    'PATH' => getenv('HOME') . '/.local/bin:' . getenv('PATH'),
+                    'PYTHONIOENCODING' => 'utf-8',
+                    'LANG' => 'en_US.UTF-8',
+                ])
+                ->run([
+                    $this->getYtDlpPath(),
+                    '--get-title',
+                    '--no-playlist',
+                    $request->url
+                ]);
 
             $fileName = $infoResult->successful() 
                 ? preg_replace('/[^A-Za-z0-9_\-\s]/', '_', trim($infoResult->output())) . '.mp4'
