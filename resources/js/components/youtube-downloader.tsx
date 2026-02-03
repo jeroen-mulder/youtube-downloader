@@ -59,7 +59,7 @@ export function YouTubeDownloaderWidget() {
             const downloadUrl = window.URL.createObjectURL(blob)
             const a = document.createElement('a')
             a.href = downloadUrl
-            
+
             // Extract filename from Content-Disposition header
             const contentDisposition = response.headers['content-disposition']
             let fileName = 'video.mp4'
@@ -69,7 +69,7 @@ export function YouTubeDownloaderWidget() {
                     fileName = matches[1].replace(/['"]/g, '')
                 }
             }
-            
+
             a.download = fileName
             document.body.appendChild(a)
             a.click()
@@ -193,14 +193,6 @@ export function YouTubeDownloaderWidget() {
                             ))}
                         </div>
                     </div>
-
-                    <button
-                        onClick={() => downloadVideo()}
-                        disabled={downloading}
-                        className="w-full rounded-md bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                    >
-                        {downloading ? 'Downloading...' : 'Download Best Quality'}
-                    </button>
                 </div>
             )}
         </div>
