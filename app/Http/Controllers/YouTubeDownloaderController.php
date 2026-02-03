@@ -15,6 +15,7 @@ class YouTubeDownloaderController extends Controller
             '/opt/homebrew/bin/yt-dlp',  // macOS Homebrew (Apple Silicon)
             '/usr/local/bin/yt-dlp',      // macOS Homebrew (Intel) / Linux
             '/usr/bin/yt-dlp',            // Linux system
+            '/snap/bin/yt-dlp',
             'yt-dlp',                     // Fallback to PATH
         ];
 
