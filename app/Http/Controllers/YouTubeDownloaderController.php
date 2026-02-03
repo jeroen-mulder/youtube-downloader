@@ -185,6 +185,7 @@ class YouTubeDownloaderController extends Controller
             $tempDir = rtrim(sys_get_temp_dir(), '/\\');
             $uniqueId = uniqid('yt_', true);
             $tempFile = $tempDir . '/' . $uniqueId . '.mp4';
+            $progressFile = $tempDir . '/' . $uniqueId . '.progress';
 
             // Build the yt-dlp command to download to temp file
             $command = [$this->getYtDlpPath()];
@@ -195,6 +196,10 @@ class YouTubeDownloaderController extends Controller
             
             $command[] = '--no-playlist';
             $command[] = '--no-warnings';
+            
+            // Add progress output with newline for better parsing
+            $command[] = '--newline';
+            $command[] = '--progress';
 
             // If a specific format is selected
             if ($request->format_id) {
@@ -216,15 +221,34 @@ class YouTubeDownloaderController extends Controller
                 'url' => $request->url,
                 'format_id' => $request->format_id,
                 'temp_file' => $tempFile,
-                'command' => implode(' ', array_map(function($arg) {
-                    return strpos($arg, ' ') !== false ? '"' . $arg . '"' : $arg;
-                }, $command))
+                'progress_file' => $progressFile,
+                'unique_id' => $uniqueId,
             ]);
+
+            // Store download ID in session for progress tracking
+            session()->put('download_id', $uniqueId);
+            session()->put('download_progress', 0);
+            session()->put('download_status', 'starting');
+            session()->save();
 
             $startTime = microtime(true);
             
-            // Execute the download
-            $result = Process::timeout(600)->run($command);
+            // Execute the download with output callback for progress tracking
+            $result = Process::timeout(600)
+                ->run($command, function (string $type, string $output) {
+                    // Parse progress from yt-dlp output
+                    if (preg_match('/(\d+\.?\d*)%/', $output, $matches)) {
+                        $progress = (float)$matches[1];
+                        session()->put('download_progress', $progress);
+                        session()->put('download_status', 'downloading');
+                        session()->save(); // Force save to persist immediately
+                        
+                        \Log::debug('Download progress', [
+                            'progress' => $progress,
+                            'output_sample' => substr($output, 0, 100)
+                        ]);
+                    }
+                });
 
             if (!$result->successful()) {
                 \Log::error('YouTube download failed', [
@@ -281,5 +305,16 @@ class YouTubeDownloaderController extends Controller
                 'error' => 'An error occurred: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    public function progress(Request $request)
+    {
+        $progress = session('download_progress', 0);
+        $status = session('download_status', 'idle');
+        
+        return response()->json([
+            'progress' => $progress,
+            'status' => $status,
+        ]);
     }
 }

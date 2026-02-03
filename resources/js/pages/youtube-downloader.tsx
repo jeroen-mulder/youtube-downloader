@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Head } from '@inertiajs/react'
 import AppLayout from '@/layouts/app-layout'
 
@@ -24,6 +24,13 @@ export default function YouTubeDownloader() {
     const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null)
     const [error, setError] = useState('')
     const [downloading, setDownloading] = useState(false)
+    const [downloadProgress, setDownloadProgress] = useState(0)
+    const [downloadStatus, setDownloadStatus] = useState('')
+
+    // Debug effect to monitor downloading state
+    useEffect(() => {
+        console.log('Downloading state changed:', downloading)
+    }, [downloading])
 
     const fetchVideoInfo = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -59,8 +66,30 @@ export default function YouTubeDownloader() {
     }
 
     const downloadVideo = async (formatId?: string) => {
+        console.log('Download started, downloading state:', true)
         setDownloading(true)
         setError('')
+        setDownloadProgress(0)
+        setDownloadStatus('Starting download...')
+        console.log('Initial state set:', { downloading: true, progress: 0, status: 'Starting download...' })
+
+        // Start polling for progress
+        const progressInterval = setInterval(async () => {
+            try {
+                const progressResponse = await fetch('/api/youtube/progress')
+                const progressData = await progressResponse.json()
+                console.log('Progress update:', progressData)
+                setDownloadProgress(progressData.progress || 0)
+                
+                if (progressData.status === 'downloading') {
+                    setDownloadStatus(`Downloading: ${Math.round(progressData.progress)}%`)
+                } else if (progressData.status === 'starting') {
+                    setDownloadStatus('Preparing download...')
+                }
+            } catch (err) {
+                console.error('Progress poll error:', err)
+            }
+        }, 500) // Poll every 500ms
 
         try {
             const response = await fetch('/api/youtube/download', {
@@ -77,11 +106,17 @@ export default function YouTubeDownloader() {
                 }),
             })
 
+            clearInterval(progressInterval) // Stop polling
+
             if (!response.ok) {
                 const data = await response.json()
                 setError(data.error || 'Failed to download video')
+                setDownloading(false)
                 return
             }
+
+            setDownloadStatus('Processing file...')
+            setDownloadProgress(100)
 
             // Create a blob from the response and download it
             const blob = await response.blob()
@@ -96,9 +131,16 @@ export default function YouTubeDownloader() {
             a.click()
             window.URL.revokeObjectURL(downloadUrl)
             document.body.removeChild(a)
+            
+            setDownloadStatus('Download complete!')
+            setTimeout(() => {
+                setDownloadProgress(0)
+                setDownloadStatus('')
+                setDownloading(false)
+            }, 2000)
         } catch (err) {
+            clearInterval(progressInterval)
             setError('An error occurred while downloading the video')
-        } finally {
             setDownloading(false)
         }
     }
@@ -149,12 +191,49 @@ export default function YouTubeDownloader() {
                                     >
                                         {loading ? 'Loading...' : 'Get Video'}
                                     </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setDownloading(!downloading)
+                                            setDownloadProgress(50)
+                                            setDownloadStatus('Test: Downloading 50%')
+                                        }}
+                                        className="rounded-md bg-purple-600 px-4 py-2 text-white hover:bg-purple-700"
+                                    >
+                                        Test Progress
+                                    </button>
                                 </div>
                             </form>
 
                             {error && (
                                 <div className="mb-4 rounded-md bg-red-50 p-4">
                                     <p className="text-sm text-red-800">{error}</p>
+                                </div>
+                            )}
+
+                            {downloading && (
+                                <div className="mb-6 rounded-lg border border-indigo-200 bg-indigo-50 p-4">
+                                    <div className="mb-2 flex items-center justify-between">
+                                        <span className="text-sm font-medium text-indigo-900">
+                                            {downloadStatus}
+                                        </span>
+                                        <span className="text-sm font-semibold text-indigo-900">
+                                            {Math.round(downloadProgress)}%
+                                        </span>
+                                    </div>
+                                    <div className="relative h-4 overflow-hidden rounded-full bg-indigo-200">
+                                        <div
+                                            className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-indigo-600 transition-all duration-300 ease-out"
+                                            style={{ width: `${downloadProgress}%` }}
+                                        >
+                                            <div className="absolute inset-0 animate-pulse bg-white opacity-20"></div>
+                                        </div>
+                                    </div>
+                                    <div className="mt-2 flex items-center justify-center gap-2">
+                                        <div className="h-2 w-2 animate-bounce rounded-full bg-indigo-600" style={{ animationDelay: '0ms' }}></div>
+                                        <div className="h-2 w-2 animate-bounce rounded-full bg-indigo-600" style={{ animationDelay: '150ms' }}></div>
+                                        <div className="h-2 w-2 animate-bounce rounded-full bg-indigo-600" style={{ animationDelay: '300ms' }}></div>
+                                    </div>
                                 </div>
                             )}
 
